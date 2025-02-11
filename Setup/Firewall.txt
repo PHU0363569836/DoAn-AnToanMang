@@ -1,0 +1,160 @@
+mở port:
+sudo nano /etc/cups/cupsd.conf
+Listen 0.0.0.0:1100
+sudo systemctl restart cups
+sudo ss -tuln | grep 1100
+
+
+kích hoạt UFW:
+sudo ufw enable
+sudo ufw allow 1100/(tcp/udp)
+sudo ufw status
+
+thay đổi IP VMware:
+sudo nano /etc/netplan/00-installer-config.yaml
+network:
+  ethernets:
+    ens33:
+      dhcp4: no
+      addresses: [192.168.60.1/24]  # Địa chỉ IP tĩnh bạn muốn
+      gateway4: 192.168.60.254      # Gateway của mạng
+      nameservers:
+        addresses: [8.8.8.8, 8.8.4.4]  # DNS server
+  version: 2
+sudo netplan apply
+
+# forward gói tin trên firewall
+sudo sysctl -w net.ipv4.ip_forward=1
+
+# nat ip lan sang internet
+sudo iptables -t nat -A POSTROUTING -o ens33 -j MASQUERADE
+
+Tải apache2:
+	sudo apt update
+	sudo apt install apache2
+	sudo systemctl start apache2
+	http://<IP_của_server>
+
+# sửa web trên web server
+	sudo nano /var/www/html/index.html
+	<html>
+	<head>
+  		<title>Server1</title>
+	</head>
+	<body>
+  		<h1>I am Server1</h1>
+	</body>
+	</html>
+
+# Lưu cấu hình iptables vĩnh viễn:
+sudo apt-get install iptables-persistent
+sudo netfilter-persistent save
+
+-kiểm tra iptables: 
+sudo iptables -L --line-numbers -v -n
+sudo iptables -t nat -L --line-numbers -v -n
+
+-xóa rules:
+sudo iptables -D [CHAIN] [LINE_NUMBER]
+-xóa tất cả rules:
+sudo iptables -F
+
+
+
+############################ file cấu hình #############################################
+
+# cai phan mem luu Iptables
+sudo apt-get install iptables-persistent
+
+# Forword cac goi tin tu Client
+sudo iptables -t nat -A POSTROUTING -o ens33 -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -o ens39 -j MASQUERADE
+sudo sysctl -w net.ipv4.ip_forward=1
+
+
+# chỉ cho Client 2 ping đến Server 1
+sudo iptables -A FORWARD -s 192.168.20.20 -d 192.168.30.129 -p icmp --icmp-type echo-request -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.129 -d 192.168.20.20 -p icmp --icmp-type echo-reply -j ACCEPT
+
+# Chặn tất cả lưu lượng từ Client 1 đến Web Server 2 ngoài giờ hành chính: Thiết lập firewall để giới hạn truy cập từ Client 1 đến Web Server 2 chỉ trong khung giờ hành chính (ví dụ: từ 8h - 17h).
+
+sudo iptables -A FORWARD -s 192.168.10.10 -d 192.168.30.130 -p tcp --dport 80 \
+  -m time --kerneltz --timestart 08:00 --timestop 17:00 --weekdays Mon,Tue,Wed,Thu,Fri -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.10.10 -d 192.168.30.130 -p tcp --dport 443 \
+  -m time --kerneltz --timestart 08:00 --timestop 17:00 --weekdays Mon,Tue,Wed,Thu,Fri -j ACCEPT
+
+# Chỉ cho phép Client 1 (192.168.10.10) truy cập Internet
+sudo iptables -A FORWARD -s 192.168.10.10 -o ens33 -j ACCEPT
+
+# Chặn tất cả các yêu cầu khác từ mạng nội bộ ra Internet
+sudo iptables -A FORWARD -s 192.168.10.0/24 -i ens37 -j DROP
+sudo iptables -A FORWARD -s 192.168.20.0/24 -i ens38 -j DROP
+
+# Giới hạn ping (ICMP Echo Request)
+sudo iptables -A INPUT -p icmp --icmp-type echo-request -m limit --limit 5/min --limit-burst 10 -j ACCEPT
+sudo iptables -A INPUT -p icmp --icmp-type echo-request -j LOG --log-prefix "ICMP INPUT DROP: " --log-level 4
+sudo iptables -A INPUT -p icmp --icmp-type echo-request -j DROP
+
+# Giới hạn ping (ICMP Echo Request)
+sudo iptables -A FORWARD -p icmp --icmp-type echo-request -m limit --limit 5/min --limit-burst 10 -j ACCEPT
+sudo iptables -A INPUT -p icmp --icmp-type echo-request -j LOG --log-prefix "ICMP FORWARD DROP: " --log-level 4
+sudo iptables -A FORWARD -p icmp --icmp-type echo-request -j DROP
+
+# Cho phép tối đa 3 kết nối SSH từ một IP trong vòng 1 phút
+sudo iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --set
+sudo iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --update --seconds 60 --hitcount 3 -j LOG --log-prefix "SSH INPUT DROP: " --log-level 4
+sudo iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --update --seconds 60 --hitcount 3 -j DROP
+
+# Cho phép tối đa 3 kết nối SSH từ một IP trong vòng 1 phút
+sudo iptables -A FORWARD -p tcp --dport 22 -m state --state NEW -m recent --set
+sudo iptables -A FORWARD -p tcp --dport 22 -m state --state NEW -m recent --update --seconds 60 --hitcount 3 -j LOG --log-prefix "SSH FORWARD DROP: " --log-level 4
+sudo iptables -A FORWARD -p tcp --dport 22 -m state --state NEW -m recent --update --seconds 60 --hitcount 3 -j DROP
+
+# Luu iptables
+sudo netfilter-persistent save
+
+#####################################################################################################################
+-kiểm tra:
+	-Chỉ cho Client 1 truy cập internet
+	client1 ping 8.8.8.8 -c 3
+	client2 ping 8.8.8.8 -c 3
+	-Chỉ cho Client 2 ping Server1
+	client2 ping 192.168.30.129 -c 3
+	client2 ping 192.168.30.130 -c 3
+	-Chỉ cho client 1 truy cập vào Webserver 2
+	curl 192.168.30.130
+	curl 192.168.30.129
+	- ping qua nhiều
+	windows ping 192.168.255.5
+	sudo tail -f /var/log/syslog | grep "ICMP INPUT DROP"
+	- ssh trên 2
+	windows ssh 192.168.255.5 ssh firewall@192.168.255.5
+	server 1 ssh 192.168.255.5
+	sudo tail -f /var/log/syslog | grep "SSH INPUT DROP"
+
+-client1: ens33:192.168.10.10
+-client2: ens33:192.168.20.20
+-firewall:ens33:192.168.255.5 ens37:192.168.10.1 ens38:192.168.20.1 ens39: 192.168.30.128
+-server1: ens33:192.168.30.129
+-server2: ens33:192.168.30.130
+
+# Kiểm tra thời gian hiện tại
+timedatectl
+
+# Đổi múi giờ thành HCM
+sudo timedatectl set-timezone Asia/Ho_Chi_Minh
+
+# Set RTC về giờ địa phương 
+sudo timedatectl set-local-rtc 1
+
+
+
+
+
+
+
+
+
+
+
+	

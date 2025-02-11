@@ -1,0 +1,41 @@
+************caching download squid********** 
+
+sudo nano /etc/squid/squid.conf
+
+memory_cache_mode disk
+minimum_object_size 0 MB
+maximum_object_size 128 MB
+cache_dir ufs /var/spool/squid 2048 16 24
+
+coredump_dir /var/spool/squid
+
+refresh_pattern ^ftp: 1440 20% 10080
+refresh_pattern ^gopher: 1440 0% 1440
+refresh_pattern -i (/cgi-bin/|\?) 0 0% 0
+refresh_pattern . 0 20% 4320
+refresh_pattern -i \.debs 0 90% 99999 refresh-ims
+refresh_pattern -i \.tar 0 90% 99999 refresh-ims
+
+cache allow all
+**********************************************
+sudo systemctl stop squid
+sudo systemctl start squid
+**********************************************
+
+****Caching bằng cách tải qua sudo apt-get ****
+sudo nano /etc/apt/apt.conf.d/80proxy
+Acquire::http::Proxy "http://Firewall_Proxy:036356@192.168.10.1:3128";
+
+***********************************************
+sudo systemctl restart squid
+***********************************************
+Dùng lệnh kiểm tra chạy trên desktop
+apt-get download apache2-bin
+apt-get download apache2-binapt-get download apache2-bin
+
+Kiểm tra 
+sudo tail -f /var/log/squid/access.log   (Nếu có TCP_HIT, là cache thành công )
+
+youtube: https://www.youtube.com/watch?v=dG0EOTGI5Ec
+
+

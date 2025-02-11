@@ -1,0 +1,8 @@
+IPTABLES
+
+# Chỉ cho Client 1 truy cập internet
+# Chỉ cho Client 2 ping Server 2
+# Chỉ cho client 1 truy cập vào Web Server 1
+# Chặn tất cả lưu lượng từ Client 1 đến Web Server 1 ngoài giờ hành chính: Thiết lập firewall để giới hạn truy cập từ Client 1 đến Web Server 1 chỉ trong khung giờ hành chính (ví dụ: từ 8h - 17h).
+
+
